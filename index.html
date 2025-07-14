@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+  <meta charset="UTF-8">
+  <title>ניהול ספרים</title>
+  <style>
+    body {
+      direction: rtl;
+      font-family: Arial;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    h1, h2 {
+      color: #333;
+    }
+    ul {
+      list-style-type: none;
+      padding: 0;
+    }
+    li {
+      padding: 6px;
+      background: #fff;
+      margin-bottom: 5px;
+      border-radius: 5px;
+      box-shadow: 0 0 3px rgba(0,0,0,_zero.1);
+    }
+    input, button {
+      margin: 5px 0;
+      padding: 8px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .error {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <h1>📚 רשימת ספרים</h1>
+  <div id="error" class="error"></div>
+  <p id="bookCount">מספר ספרים: טוען...</p>
+  <ul id="bookList"></ul>
+
+  <h2>הוספת ספר חדש</h2>
+  <form id="addBookForm">
+    <input type="text" id="title" placeholder="כותרת" required><br>
+    <input type="text" id="author" placeholder="מחבר" required><br>
+    <input type="number" id="price" placeholder="מחיר" step="0.01" required><br>
+    <button type="submit">הוסף</button>
+  </form>
+
+  <div id="editForm" class="edit-form">
+    <input type="text" id="editTitle" placeholder="כותרת חדשה"><br>
+    <input type="text" id="editAuthor" placeholder="מחבר חדש"><br>
+    <input type="number" id="editPrice" placeholder="מחיר חדש" step="0.01"><br>
+    <button onclick="saveEdit()">שמור</button>
+    <button onclick="cancelEdit()">בטל</button>
+  </div>
+
+  <script>
+    const list = document.getElementById('bookList');
+    const form = document.getElementById('addBookForm');
+    const errorDiv = document.getElementById('error');
+    const bookCountDiv = document.getElementById('bookCount');
+    const editForm = document.getElementById('editForm');
+
+    // הצגת הודעות שגיאה
+    function showError(message) {
+      errorDiv.textContent = message;
+      setTimeout(() => errorDiv.textContent = '', 5000);
+    }
+
+  // שליפת ספרים וספירה
+    async function fetchBooksAndCount() {
+      try {
+        const [booksRes, countRes] = await Promise.all([
+          fetch('http://localhost:3000/bookss'),
+          fetch('http://localhost:3000/bookss/count')
+        ]);
+        if (!booksRes.ok) throw new Error(`שגיאת שרת ספרים: ${booksRes.status} - ${await booksRes.text()}`);
+        if (!countRes.ok) throw new Error(`שגיאת ספירה: ${countRes.status} - ${await countRes.text()}`);
+        
+        const books = await booksRes.json();
+        const count = await countRes.json();
+        list.innerHTML = '';
+        if (books.length === 0) {
+          list.innerHTML = '<li>לא נמצאו ספרים</li>';
+        } else {
+          books.forEach(book => {
+            const li = document.createElement('li');
+            li.innerHTML = `${book.title} - ${book.author} (₪${book.price || 'לא זמין'}) <a href="#" onclick="showEditForm('${book._id}', '${book.title}', '${book.author}', ${book.price || 0})">ערוך</a> <a href="#" onclick="deleteBook('${book._id}')">מחק</a>`;
+            list.appendChild(li);
+          });
+        }
+        bookCountDiv.textContent = `מספר ספרים: ${count.count}`;
+      } catch (err) {
+        showError(`שגיאה בטעינה: ${err.message}`);
+        console.error(err);
+        bookCountDiv.textContent = 'מספר ספרים: שגיאה';
+      }
+    }
+
+    // פונקציה חדשה למחיקה
+async function deleteBook(id) {
+  if (!id || typeof id !== 'string' || id.length !== 24) {
+    showError('שגיאה: מזהה ספר לא תקין');
+    return;
+  }
+  if (confirm('האם את בטוחה שברצונך למחוק את הספר?')) {
+    try {
+      const res = await fetch(`http://localhost:3000/bookss/${id}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'שגיאה במחיקה');
+      }
+      showError('ספר נמחק בהצלחה!');
+      fetchBooksAndCount();
+    } catch (err) {
+      showError(`שגיאה במחיקה: ${err.message}`);
+      console.error(err);
+    }
+  }
+}
+    // הוספת ספר
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const title = document.getElementById('title').value;
+      const author = document.getElementById('author').value;
+      const price = parseFloat(document.getElementById('price').value);
+
+      if (!title || !author || isNaN(price)) {
+        showError('אנא מלא את כל השדות בצורה תקינה');
+        return;
+      }
+
+      try {
+        const res = await fetch('http://localhost:3000/bookss', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, author, price })
+        });
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.err || 'שגיאה בהוספת הספר');
+        }
+        form.reset();
+        showError('ספר נוסף בהצלחה!');
+        fetchBooksAndCount(); // עדכון ספרים וספירה
+      } catch (err) {
+        showError(`שגיאה בהוספת הספר: ${err.message}`);
+        console.error(err);
+      }
+    });
+
+    // הצגת טופס עריכה
+    function showEditForm(id, title, author, price) {
+      if (!id || typeof id !== 'string' || id.length !== 24) {
+        showError('שגיאה: מזהה ספר לא תקין. בדוק ב-Console.');
+        console.log('Invalid ID:', id); // לוג לבדיקה
+        return;
+      }
+      document.getElementById('editTitle').value = title;
+      document.getElementById('editAuthor').value = author;
+      document.getElementById('editPrice').value = price;
+      editForm.style.display = 'block';
+      window.currentEditId = id; // שמירת ה-ID לעדכון
+    }
+
+    // שמירת עדכון
+    async function saveEdit() {
+      const updatedBook = {
+        title: document.getElementById('editTitle').value,
+        author: document.getElementById('editAuthor').value,
+        price: parseFloat(document.getElementById('editPrice').value)
+      };
+
+      if (!window.currentEditId || typeof window.currentEditId !== 'string' || window.currentEditId.length !== 24) {
+        showError('שגיאה: מזהה ספר לא תקין');
+        console.log('Invalid currentEditId:', window.currentEditId);
+        return;
+      }
+
+      try {
+        const res = await fetch(`http://localhost:3000/bookss/${window.currentEditId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedBook)
+        });
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || 'שגיאה בעדכון');
+        }
+        showError('ספר עודכן בהצלחה!');
+        cancelEdit();
+        fetchBooksAndCount();
+      } catch (err) {
+        showError(`שגיאה בעדכון: ${err.message}`);
+        console.error(err);
+      }
+    }
+
+    // ביטול עריכה
+    function cancelEdit() {
+      editForm.style.display = 'none';
+      document.getElementById('editTitle').value = '';
+      document.getElementById('editAuthor').value = '';
+      document.getElementById('editPrice').value = '';
+      delete window.currentEditId;
+    }
+
+    // שליפת ספרים וספירה בהתחלה
+    fetchBooksAndCount();
+  </script>
+</body>
+</html>
+
